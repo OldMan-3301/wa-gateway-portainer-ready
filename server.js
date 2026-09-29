@@ -9,7 +9,6 @@ const OPENWA_BASE_URL = String(process.env.OPENWA_BASE_URL || 'http://openwa-api
 const OPENWA_SESSION_ID = String(process.env.OPENWA_SESSION_ID || '').trim();
 const OPENWA_API_KEY = String(process.env.OPENWA_API_KEY || '').trim();
 const GATEWAY_API_KEY = String(process.env.GATEWAY_API_KEY || '').trim();
-const GATEWAY_KEY_QUERY_PARAM = String(process.env.GATEWAY_KEY_QUERY_PARAM || 'key').trim() || 'key';
 const REQUEST_TIMEOUT_MS = Number(process.env.REQUEST_TIMEOUT_MS || 30000);
 const MAX_TEXT_LENGTH = Number(process.env.MAX_TEXT_LENGTH || 4096);
 
@@ -19,11 +18,9 @@ function unauthorized(res) {
 
 function authorized(req) {
   if (!GATEWAY_API_KEY) return false;
-  const headerKey = req.get('x-gateway-key') ||
+  const supplied = req.get('x-gateway-key') ||
     (req.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
-  const queryKey = req.query?.[GATEWAY_KEY_QUERY_PARAM];
-  const supplied = String(headerKey || queryKey || '').trim();
-  return supplied.length > 0 && supplied === GATEWAY_API_KEY;
+  return supplied && supplied === GATEWAY_API_KEY;
 }
 
 function normalizePhone(value) {

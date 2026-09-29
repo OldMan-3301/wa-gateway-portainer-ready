@@ -1,49 +1,26 @@
-WA Gateway - Portainer-ready
-============================
+PORTAINER DEPLOYMENT
 
-Purpose
--------
-Adapter between an AAA/billing system that can only call a GET/POST URL and OpenWA.
+1. Ensure the existing Docker network is named: openwa-network
+2. In Portainer: Stacks -> Add stack -> Upload
+3. Upload this ZIP file.
+4. Set these environment variables in Portainer:
+   OPENWA_API_KEY       = your OpenWA API key
+   OPENWA_SESSION_ID    = your OpenWA session UUID
+   GATEWAY_API_KEY      = a long random secret you create
+5. Deploy the stack.
 
-AAA configuration
------------------
-Use:
+NPM:
+Domain: wa-gateway.openwa.tofan.dev
+Scheme: http
+Forward Hostname/IP: wa-gateway
+Forward Port: 3000
+Attach NPM to openwa-network.
 
-API URL:
-https://wa-gateway.openwa.tofan.dev/send?key=YOUR_GATEWAY_API_KEY&dst={dst}&text={text}
+External API:
+GET https://wa-gateway.openwa.tofan.dev/send?dst={dst}&text={text}
+Header: X-Gateway-Key: YOUR_GATEWAY_API_KEY
 
-API Method:
-GET
-
-The gateway accepts the authentication secret in the `key` query parameter.
-It also continues to accept the X-Gateway-Key header or Bearer token.
-
-IMPORTANT: use a URL-safe gateway key. Generate one with:
-openssl rand -hex 32
-
-Portainer environment variables
---------------------------------
-OPENWA_API_KEY       Existing OpenWA API key
-OPENWA_SESSION_ID    UUID of the active OpenWA session
-GATEWAY_API_KEY      New random secret shared with the AAA server
-
-Do NOT put real secrets in GitHub.
-
-Network
--------
-The gateway uses the existing external Docker network `openwa-network` and connects
-internally to `http://openwa-api:2785`. No host port is published.
-
-Endpoints
----------
+Health:
 GET /health
+Ready:
 GET /ready
-GET /send?key=...&dst=...&text=...
-POST /send?key=... with JSON body {"dst":"...","text":"..."}
-
-Security note
--------------
-The query-string key is supported because the upstream AAA service does not provide
-custom HTTP headers. Query strings may appear in proxy/access logs, so use a dedicated
-random secret and do not reuse your OpenWA API key. Keep HTTPS enabled in Nginx Proxy
-Manager. If the AAA service later supports custom headers, prefer X-Gateway-Key.
