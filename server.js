@@ -31,37 +31,60 @@ function bearerToken(headerValue) {
   return (match ? match[1] : raw).trim();
 }
 
+function requestBody(req) {
+  return req.body && typeof req.body === 'object' ? req.body : {};
+}
+
 function authorized(req) {
   if (!GATEWAY_API_KEY) return false;
+  const body = requestBody(req);
   const headerKey = String(req.get('x-gateway-key') || '').trim() || bearerToken(req.get('authorization'));
-  const queryKey = firstDefined(req.query?.[GATEWAY_KEY_QUERY_PARAM]);
-  const supplied = String(headerKey || queryKey || '').trim();
+  const queryKey = firstDefined(req.query?.[GATEWAY_KEY_QUERY_PARAM], req.query?.auth_key);
+  const bodyKey = firstDefined(body.auth_key, body[GATEWAY_KEY_QUERY_PARAM], body.key);
+  const supplied = String(headerKey || queryKey || bodyKey || '').trim();
   return supplied.length > 0 && supplied === GATEWAY_API_KEY;
 }
 
 function readSendFields(req) {
-  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  const body = requestBody(req);
   return {
     dst: firstDefined(req.query?.dst, body.dst),
-    text: firstDefined(req.query?.text, body.text)
+    text: firstDefined(req.query?.text, body.text),
+    countryCode: firstDefined(req.query?.country_code, body.country_code)
   };
 }
 
-function normalizePhone(value) {
-  if (value === undefined || value === null) return null;
-  let s = String(value).trim();
+function digitsOnly(value) {
+  let s = String(value ?? '').trim();
   const digitMap = { '۰':'0','۱':'1','۲':'2','۳':'3','۴':'4','۵':'5','۶':'6','۷':'7','۸':'8','۹':'9','٠':'0','١':'1','٢':'2','٣':'3','٤':'4','٥':'5','٦':'6','٧':'7','٨':'8','٩':'9' };
   s = s.replace(/[۰-۹٠-٩]/g, ch => digitMap[ch] || ch);
-  s = s.replace(/[\s().-]/g, '');
-  if (s.startsWith('00')) s = '+' + s.slice(2);
-  if (s.startsWith('+')) s = s.slice(1);
-  if (s.startsWith('0') && s.length === 10) s = '93' + s.slice(1);
+  s = s.replace(/[\s().+-]/g, '');
+  if (s.startsWith('00')) s = s.slice(2);
+  return s;
+}
+
+function normalizePhone(value, countryCode) {
+  if (value === undefined || value === null) return null;
+  let s = digitsOnly(value);
+  const cc = digitsOnly(countryCode);
+  if (!s) return null;
+
+  if (cc) {
+    const alreadyInternational = s.startsWith(cc) && s.length >= cc.length + 8;
+    if (!alreadyInternational) {
+      s = s.replace(/^0+/, '');
+      if (!(s.startsWith(cc) && s.length >= cc.length + 8)) s = cc + s;
+    }
+  } else if (s.startsWith('0') && s.length === 10) {
+    s = '93' + s.slice(1);
+  }
+
   if (!/^\d{8,15}$/.test(s)) return null;
   return `${s}@c.us`;
 }
 
-async function sendText(dst, text) {
-  const chatId = normalizePhone(dst);
+async function sendText(dst, text, countryCode) {
+  const chatId = normalizePhone(dst, countryCode);
   if (!chatId) {
     const err = new Error('Invalid recipient phone number');
     err.status = 400;
@@ -135,9 +158,9 @@ function createApp() {
 
   app.all('/send', async (req, res) => {
     if (!authorized(req)) return unauthorized(res);
-    const { dst, text } = readSendFields(req);
+    const { dst, text, countryCode } = readSendFields(req);
     try {
-      const result = await sendText(dst, text);
+      const result = await sendText(dst, text, countryCode);
       res.json({ ok: true, ...result });
     } catch (err) {
       res.status(err.status || 502).json({ ok: false, error: err.message });

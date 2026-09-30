@@ -7,7 +7,7 @@ process.env.OPENWA_SESSION_ID = '';
 process.env.OPENWA_API_KEY = '';
 process.env.OPENWA_BASE_URL = 'http://127.0.0.1:9';
 
-const { createApp } = require('../server');
+const { createApp, normalizePhone } = require('../server');
 
 let server;
 let baseUrl;
@@ -124,6 +124,31 @@ test('wrong credentials are rejected', async () => {
     body: ''
   });
   assert.equal(res.status, 401);
+});
+
+test('AAA POST auth_key, dst, text, and country_code is accepted', async () => {
+  const res = await request('POST', '/send?', {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'auth_key=test-gateway-key&dst=0728528440&text=Auth+test&country_code=93'
+  });
+  assert.equal(res.status, 500);
+  assert.equal(res.json.error, 'OpenWA is not configured');
+});
+
+test('wrong auth_key is rejected', async () => {
+  const res = await request('POST', '/send?', {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'auth_key=wrong&dst=0728528440&text=Auth+test&country_code=93'
+  });
+  assert.equal(res.status, 401);
+});
+
+test('country_code is applied once to local and international numbers', () => {
+  assert.equal(normalizePhone('0728528440', '93'), '93728528440@c.us');
+  assert.equal(normalizePhone('728528440', '93'), '93728528440@c.us');
+  assert.equal(normalizePhone('93728528440', '93'), '93728528440@c.us');
+  assert.equal(normalizePhone('+93 728 528 440', '93'), '93728528440@c.us');
+  assert.equal(normalizePhone('0093728528440', '93'), '93728528440@c.us');
 });
 
 test('missing message is rejected after auth', async () => {

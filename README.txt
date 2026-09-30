@@ -7,26 +7,28 @@ Adapter between an AAA/billing system that can only call a GET/POST URL and Open
 
 AAA configuration
 -----------------
-Use POST. Put the destination and message in the URL, and send the gateway key
-as a Bearer token. Do not put key= in this URL.
-
-API URL:
-https://wa-gateway.openwa.tofan.dev/send?dst={dst}&text={text}
+SMS API Url:
+https://wa-gateway.openwa.tofan.dev/send?
 
 API Method:
 POST
 
-POST headers:
-Content-Type: application/json
-Authorization: Bearer YOUR_GATEWAY_API_KEY
+POST Parameters:
+auth_key = YOUR_GATEWAY_API_KEY
+dst = {dst}
+text = {text}
+country_code = 93
 
-The gateway reads dst and text from the query string or from a JSON or
-application/x-www-form-urlencoded body. A manual GET test can still pass the
-key in the query string:
+Use 93 for Afghanistan. Change country_code if the customers use another
+country. Click Save before Test.
+
+The gateway also accepts dst and text from the query string, a JSON body, or
+a form body. A manual GET test can still pass the key in the query string:
 
 https://wa-gateway.openwa.tofan.dev/send?key=YOUR_GATEWAY_API_KEY&dst=9370XXXXXXXXX&text=Auth%20test
 
 Accepted authentication (one is required):
+- POST field auth_key
 - Authorization: Bearer YOUR_GATEWAY_API_KEY
 - X-Gateway-Key: YOUR_GATEWAY_API_KEY
 - ?key=YOUR_GATEWAY_API_KEY
@@ -53,8 +55,8 @@ GET /health
 GET /ready
 GET or POST /send
 
-dst and text may be query parameters, a JSON body, or a form body.
-Authentication may be a Bearer token, X-Gateway-Key, or the key query parameter.
+dst, text, and country_code may be query parameters, a JSON body, or a form body.
+Authentication may be the auth_key field, a Bearer token, X-Gateway-Key, or the key query parameter.
 
 Security note
 -------------
