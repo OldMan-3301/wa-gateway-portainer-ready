@@ -7,16 +7,29 @@ Adapter between an AAA/billing system that can only call a GET/POST URL and Open
 
 AAA configuration
 -----------------
-Use:
+Use POST. Put the destination and message in the URL, and send the gateway key
+as a Bearer token. Do not put key= in this URL.
 
 API URL:
-https://wa-gateway.openwa.tofan.dev/send?key=YOUR_GATEWAY_API_KEY&dst={dst}&text={text}
+https://wa-gateway.openwa.tofan.dev/send?dst={dst}&text={text}
 
 API Method:
-GET
+POST
 
-The gateway accepts the authentication secret in the `key` query parameter.
-It also continues to accept the X-Gateway-Key header or Bearer token.
+POST headers:
+Content-Type: application/json
+Authorization: Bearer YOUR_GATEWAY_API_KEY
+
+The gateway reads dst and text from the query string or from a JSON or
+application/x-www-form-urlencoded body. A manual GET test can still pass the
+key in the query string:
+
+https://wa-gateway.openwa.tofan.dev/send?key=YOUR_GATEWAY_API_KEY&dst=9370XXXXXXXXX&text=Auth%20test
+
+Accepted authentication (one is required):
+- Authorization: Bearer YOUR_GATEWAY_API_KEY
+- X-Gateway-Key: YOUR_GATEWAY_API_KEY
+- ?key=YOUR_GATEWAY_API_KEY
 
 IMPORTANT: use a URL-safe gateway key. Generate one with:
 openssl rand -hex 32
@@ -38,12 +51,14 @@ Endpoints
 ---------
 GET /health
 GET /ready
-GET /send?key=...&dst=...&text=...
-POST /send?key=... with JSON body {"dst":"...","text":"..."}
+GET or POST /send
+
+dst and text may be query parameters, a JSON body, or a form body.
+Authentication may be a Bearer token, X-Gateway-Key, or the key query parameter.
 
 Security note
 -------------
-The query-string key is supported because the upstream AAA service does not provide
-custom HTTP headers. Query strings may appear in proxy/access logs, so use a dedicated
-random secret and do not reuse your OpenWA API key. Keep HTTPS enabled in Nginx Proxy
-Manager. If the AAA service later supports custom headers, prefer X-Gateway-Key.
+Prefer Authorization: Bearer or X-Gateway-Key. The query-string key remains available
+for the manual GET test, but query strings may appear in proxy and access logs.
+Use a dedicated random secret and do not reuse your OpenWA API key. Keep HTTPS
+enabled in Nginx Proxy Manager.

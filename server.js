@@ -1,9 +1,5 @@
 const express = require('express');
 
-const app = express();
-app.disable('x-powered-by');
-app.use(express.json({ limit: '64kb' }));
-
 const PORT = Number(process.env.PORT || 3000);
 const OPENWA_BASE_URL = String(process.env.OPENWA_BASE_URL || 'http://openwa-api:2785').replace(/\/$/, '');
 const OPENWA_SESSION_ID = String(process.env.OPENWA_SESSION_ID || '').trim();
@@ -17,13 +13,38 @@ function unauthorized(res) {
   return res.status(401).json({ ok: false, error: 'Unauthorized' });
 }
 
+function firstDefined(...values) {
+  for (const value of values) {
+    if (value === undefined || value === null) continue;
+    const picked = Array.isArray(value) ? value[0] : value;
+    if (picked === undefined || picked === null) continue;
+    if (typeof picked === 'string' && picked.trim() === '') continue;
+    return picked;
+  }
+  return undefined;
+}
+
+function bearerToken(headerValue) {
+  const raw = String(headerValue || '').trim();
+  if (!raw) return '';
+  const match = raw.match(/^Bearer\s+(.+)$/i);
+  return (match ? match[1] : raw).trim();
+}
+
 function authorized(req) {
   if (!GATEWAY_API_KEY) return false;
-  const headerKey = req.get('x-gateway-key') ||
-    (req.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
-  const queryKey = req.query?.[GATEWAY_KEY_QUERY_PARAM];
+  const headerKey = String(req.get('x-gateway-key') || '').trim() || bearerToken(req.get('authorization'));
+  const queryKey = firstDefined(req.query?.[GATEWAY_KEY_QUERY_PARAM]);
   const supplied = String(headerKey || queryKey || '').trim();
   return supplied.length > 0 && supplied === GATEWAY_API_KEY;
+}
+
+function readSendFields(req) {
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  return {
+    dst: firstDefined(req.query?.dst, body.dst),
+    text: firstDefined(req.query?.text, body.text)
+  };
 }
 
 function normalizePhone(value) {
@@ -40,12 +61,6 @@ function normalizePhone(value) {
 }
 
 async function sendText(dst, text) {
-  if (!OPENWA_SESSION_ID || !OPENWA_API_KEY) {
-    const err = new Error('OpenWA is not configured');
-    err.status = 500;
-    throw err;
-  }
-
   const chatId = normalizePhone(dst);
   if (!chatId) {
     const err = new Error('Invalid recipient phone number');
@@ -62,6 +77,12 @@ async function sendText(dst, text) {
   if (message.length > MAX_TEXT_LENGTH) {
     const err = new Error(`Message exceeds maximum length of ${MAX_TEXT_LENGTH}`);
     err.status = 400;
+    throw err;
+  }
+
+  if (!OPENWA_SESSION_ID || !OPENWA_API_KEY) {
+    const err = new Error('OpenWA is not configured');
+    err.status = 500;
     throw err;
   }
 
@@ -93,26 +114,45 @@ async function sendText(dst, text) {
   }
 }
 
-app.get('/health', (_req, res) => res.json({ ok: true, service: 'wa-gateway' }));
-app.get('/ready', (_req, res) => {
-  const ready = Boolean(OPENWA_SESSION_ID && OPENWA_API_KEY && GATEWAY_API_KEY);
-  res.status(ready ? 200 : 503).json({ ok: ready, configured: ready });
-});
+function createApp() {
+  const app = express();
+  app.disable('x-powered-by');
+  app.use(express.json({ limit: '64kb' }));
+  app.use(express.urlencoded({ extended: false, limit: '64kb' }));
+  app.use((err, req, _res, next) => {
+    if (err && (err.type === 'entity.parse.failed' || err instanceof SyntaxError)) {
+      req.body = {};
+      return next();
+    }
+    return next(err);
+  });
 
-app.all('/send', async (req, res) => {
-  if (!authorized(req)) return unauthorized(res);
-  const dst = req.method === 'GET' ? req.query.dst : req.body?.dst;
-  const text = req.method === 'GET' ? req.query.text : req.body?.text;
-  try {
-    const result = await sendText(dst, text);
-    res.json({ ok: true, ...result });
-  } catch (err) {
-    res.status(err.status || 502).json({ ok: false, error: err.message });
-  }
-});
+  app.get('/health', (_req, res) => res.json({ ok: true, service: 'wa-gateway' }));
+  app.get('/ready', (_req, res) => {
+    const ready = Boolean(OPENWA_SESSION_ID && OPENWA_API_KEY && GATEWAY_API_KEY);
+    res.status(ready ? 200 : 503).json({ ok: ready, configured: ready });
+  });
 
-app.use((_req, res) => res.status(404).json({ ok: false, error: 'Not found' }));
+  app.all('/send', async (req, res) => {
+    if (!authorized(req)) return unauthorized(res);
+    const { dst, text } = readSendFields(req);
+    try {
+      const result = await sendText(dst, text);
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      res.status(err.status || 502).json({ ok: false, error: err.message });
+    }
+  });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`wa-gateway listening on ${PORT}`);
-});
+  app.use((_req, res) => res.status(404).json({ ok: false, error: 'Not found' }));
+  return app;
+}
+
+if (require.main === module) {
+  const app = createApp();
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`wa-gateway listening on ${PORT}`);
+  });
+}
+
+module.exports = { createApp, normalizePhone, authorized, readSendFields };
